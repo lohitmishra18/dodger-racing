@@ -215,41 +215,47 @@
       }
     }
 
-    function drawPlayerCar(x,y,w,h){
-      // black SUV body (Nexon-like, no branding)
-      drawSUV(x, y, w, h, '#121212', '#1f1f1f');
+    function drawPlayerCar(x, y, w, h) {
+  // Black SUV body (no branding)
+  drawSUV(x, y, w, h, '#121212', '#1f1f1f');
 
-      // windshield where kid shows
-      const winX = x;
-      const winY = y - h*0.17;
-      const winW = w * 0.78;
-      const winH = h * 0.40;
-      roundRect(winX - winW/2, winY - winH/2, winW, winH, 10, 'rgba(255,255,255,0.22)');
+  // Bigger window for kid's picture
+  const winX = x;
+  const winY = y - h * 0.15; // slightly higher
+  const winW = w * 0.85;
+  const winH = h * 0.48;
 
-      // kid portrait clipped to a circle in the windshield
-      if (kidReady){
-        ctx.save();
-        const clipR = Math.min(winW, winH) * 0.42;
-        ctx.beginPath();
-        ctx.arc(winX, winY, clipR, 0, Math.PI*2);
-        ctx.closePath();
-        ctx.clip();
+  // Removed tinted rectangle for better visibility
+  // roundRect(winX - winW/2, winY - winH/2, winW, winH, 10, 'rgba(255,255,255,0.22)');
 
-        const iw = kidImg.width, ih = kidImg.height;
-        const side = Math.min(iw, ih);
-        const sx = (iw - side)/2;
-        const sy = (ih - side)/2;
-        const d = clipR*2;
-        ctx.drawImage(kidImg, sx, sy, side, side, winX - d/2, winY - d/2, d, d);
-        ctx.restore();
+  // Draw kid’s photo, scaled and centered
+  if (kidReady) {
+    ctx.save();
+    const clipR = Math.min(winW, winH) * 0.5; // bigger clip radius
+    ctx.beginPath();
+    ctx.arc(winX, winY, clipR, 0, Math.PI * 2);
+    ctx.closePath();
+    ctx.clip();
 
-        ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.arc(winX, winY, clipR, 0, Math.PI*2);
-        ctx.stroke();
-      }
-    }
+    const scale = 1.3; // scale factor to zoom the image
+    const iw = kidImg.width, ih = kidImg.height;
+    const side = Math.min(iw, ih);
+    const sx = (iw - side) / 2;
+    const sy = (ih - side) / 2;
+    const d = clipR * 2 * scale;
+    ctx.drawImage(kidImg, sx, sy, side, side, winX - d/2, winY - d/2, d, d);
+
+    ctx.restore();
+
+    // Border around photo
+    ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(winX, winY, clipR, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+}
+
 
     function drawObstacleCar(x,y,w,h){
       drawSUV(x, y, w, h, '#cc2b2b', '#b22222'); // red sedan-like
