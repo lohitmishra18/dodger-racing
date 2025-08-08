@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Dodger Racing</title>
+  <style>
+    :root { --bg:#0b1221; --lane:#111a33; --text:#e8f0ff; --accent:#76d275; --danger:#ff5a5a; }
+    html, body { height:100%; margin:0; background:var(--bg); color:var(--text); font-family:system-ui,Segoe UI,Roboto,Inter,sans-serif; }
+    .wrap { display:flex; flex-direction:column; align-items:center; gap:8px; padding:16px; }
+    h1 { margin:10px 0 0; font-size:20px; font-weight:700; letter-spacing:.3px; }
+    canvas { background:linear-gradient(#0d1326, #0b1221); border:2px solid #1f2b54; border-radius:12px; touch-action:none; }
+    .hud { display:flex; gap:16px; align-items:center; font-weight:600; }
+    .btns { display:flex; gap:10px; }
+    button { background:#1b274d; color:var(--text); border:1px solid #2a3972; padding:8px 12px; border-radius:10px; cursor:pointer; }
+    button:hover { background:#223064; }
+    .mobile { display:none; gap:12px; }
+    .mctl { width:70px; height:70px; background:#1b274d; border:1px solid #2a3972; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:900; user-select:none; }
+    @media (max-width: 640px) {
+      canvas { width:300px; height:500px; }
+      .mobile { display:flex; }
+    }
+    .tips { font-size:12px; opacity:.85; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>🚗 Dodger Racing</h1>
+    <div class="hud">
+      <div>Score: <span id="score">0</span></div>
+      <div>Best: <span id="best">0</span></div>
+      <div>Speed: <span id="spd">1.0x</span></div>
+      <div class="btns">
+        <button id="restart">Restart</button>
+      </div>
+    </div>
+    <canvas id="game" width="360" height="600" aria-label="Racing game"></canvas>
+    <div class="mobile">
+      <div class="mctl" id="left">⟵</div>
+      <div class="mctl" id="boost">⚡</div>
+      <div class="mctl" id="right">⟶</div>
+    </div>
+    <div class="tips">Controls: ← → to move, hold <b>Shift</b> (or tap ⚡) to boost. Avoid red obstacles. Survive to score!</div>
+  </div>
+
+  <script>
+    // --- Setup
+    const cvs = document.getElementById('game');
+    const ctx = cvs.getContext('2d');
+    const scoreEl = document.getElementById('score');
+    const bestEl  = document.getElementById('best');
+    const spdEl   = document.getElementById('spd');
+    const restartBtn = document.getElementById('restart');
+
+    const W = cvs.width, H = cvs.height;
+    const laneCount = 3;
+    const laneW = W / laneCount;
+
+    const state = {
+      running: true,
+      t: 0,
+      speed: 3,
+      boost: false,
+      score: 0,
+      best: parseInt(localStorage.getItem('dr_best')||'0',10),
+      obstacles: [],
+      linesY: 0
+    };
+    bestEl.textContent = state.best;
+
+    // Player car
+    const car = {
+      lane: 1, // 0..2
+      x: laneW*1 + laneW/2,
+      y: H - 100,
+      w: 44,
+      h: 70,
+      color: '#76d275'
+    };
+
+    // Input
+    const keys = {};
+    addEventListener('keydown', e => {
+      keys[e.key] = true;
+      if (e.key === 'ArrowLeft')  moveLane(-1);
+      if (e.key === 'ArrowRight') moveLane(+1);
+      if (e.key === 'Shift') state.boost = true;
+      if (!state.running && e.key === 'Enter') reset();
+    });
+    addEventListener('keyup', e => {
+      keys[e.key] = false;
+      if (e.key === 'Shift') state.boost = false;
+    });
+
+    // Touch controls
+    document.getElementById('left').addEventListener('touchstart', () => moveLane(-1));
+    document.getElementById('right').addEventListener('touchstart', () => moveLane(+1));
+    document.getElementById('boost').addEventListener('touchstart', () => state.boost = true);
+    document.getElementById('boost').addEventListener('touchend', () => state.boost = false);
+
+    restartBtn.onclick = reset;
+
+    function moveLane(dir){
+      if (!state.running) return;
+      car.lane = Math.max(0, Math.min(laneCount-1, car.lane + dir));
+      car.x = car.lane*laneW + laneW/2;
+    }
+
+    // Obstacles
+    function spawnObstacle(){
+      const lane = Math.floor(Math.random()*laneCount);
+      state.obstacles.push({
+        lane,
+        x: lane*laneW + laneW/2,
+        y: -80,
+        w: 44,
+        h: 70,
+        color: '#ff5a5a'
+      });
+    }
+
+    // Game Loop
+    let last = 0;
+    function loop(ts){
+      const dt = (ts - last) / 16.6667; // ~frames
+      last = ts;
+      if (state.running) update(dt);
+      draw();
+      requestAnimationFrame(loop);
+    }
+    requestAnimationFrame(loop);
+
+    function update(dt){
+      state.t += dt;
+      const baseSpeed = state.speed * (state.boost ? 1.7 : 1.0);
+      spdEl.textContent = (state.boost ? (state.speed*1.7).toFixed(1) : state.speed.toFixed(1)) + 'x';
+
+      // Lane lines scrolling
+      state.linesY = (state.linesY + baseSpeed*4) % 40;
+
+      // Spawn obstacles
+      if (state.t > 30 / baseSpeed) { // faster = more spawns
+        state.t = 0;
+        spawnObstacle();
+        // Gradual difficulty
+        state.speed = Math.min(7, state.speed + 0.02);
+      }
+
+      // Move obstacles
+      for (const o of state.obstacles) {
+        o.y += baseSpeed * 3.2;
+      }
+
+      // Remove off-screen + score
+      state.obstacles = state.obstacles.filter(o=>{
+        if (o.y > H+100) {
+          state.score++;
+          scoreEl.textContent = state.score;
+          return false;
+        }
+        return true;
+      });
+
+      // Collision
+      for (const o of state.obstacles) {
+        if (intersect(car, o)) {
+          gameOver();
+          break;
+        }
+      }
+    }
+
+    function intersect(a,b){
+      const ax = a.x - a.w/2, ay = a.y - a.h/2;
+      const bx = b.x - b.w/2, by = b.y - b.h/2;
+      return ax < bx + b.w && ax + a.w > bx && ay < by + b.h && ay + a.h > by;
+    }
+
+    function draw(){
+      // Road
+      ctx.clearRect(0,0,W,H);
+      ctx.fillStyle = '#0b1221';
+      ctx.fillRect(0,0,W,H);
+
+      // Lanes
+      for (let i=1;i<laneCount;i++){
+        ctx.fillStyle = '#1a2447';
+        ctx.fillRect(i*laneW-2,0,4,H);
+      }
+
+      // Dotted center lines per lane
+      ctx.strokeStyle = '#2a3972';
+      ctx.lineWidth = 4;
+      for (let lane=0; lane<laneCount; lane++){
+        const cx = lane*laneW + laneW/2;
+        ctx.setLineDash([18,18]);
+        ctx.beginPath();
+        ctx.moveTo(cx, -40 + state.linesY);
+        ctx.lineTo(cx, H + 40 + state.linesY);
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+
+      // Player car
+      drawCar(car.x, car.y, car.w, car.h, car.color);
+
+      // Obstacles
+      for (const o of state.obstacles) drawCar(o.x, o.y, o.w, o.h, o.color);
+
+      // Game Over overlay
+      if (!state.running){
+        ctx.fillStyle = 'rgba(0,0,0,.55)';
+        ctx.fillRect(0,0,W,H);
+        ctx.fillStyle = '#fff';
+        ctx.textAlign = 'center';
+        ctx.font = 'bold 28px system-ui';
+        ctx.fillText('Game Over', W/2, H/2 - 10);
+        ctx.font = '16px system-ui';
+        ctx.fillText('Press Enter or click Restart', W/2, H/2 + 20);
+      }
+    }
+
+    function drawCar(x,y,w,h,color){
+      ctx.save();
+      ctx.translate(x, y);
+      // Body
+      roundRect(-w/2, -h/2, w, h, 10, color);
+      // Windows
+      roundRect(-w/2+6, -h/2+10, w-12, h/3, 8, 'rgba(255,255,255,.25)');
+      // Wheels
+      ctx.fillStyle = '#0d0d0d';
+      ctx.fillRect(-w/2-6, -h/2+12, 8, 18);
+      ctx.fillRect(w/2-2, -h/2+12, 8, 18);
+      ctx.fillRect(-w/2-6, h/2-30, 8, 18);
+      ctx.fillRect(w/2-2, h/2-30, 8, 18);
+      ctx.restore();
+    }
+
+    function roundRect(x,y,w,h,r,fill){
+      ctx.beginPath();
+      ctx.moveTo(x+r,y);
+      ctx.arcTo(x+w,y,x+w,y+h,r);
+      ctx.arcTo(x+w,y+h,x,y+h,r);
+      ctx.arcTo(x,y+h,x,y,r);
+      ctx.arcTo(x,y,x+w,y,r);
+      ctx.closePath();
+      ctx.fillStyle = fill;
+      ctx.fill();
+    }
+
+    function gameOver(){
+      state.running = false;
+      if (state.score > state.best){
+        state.best = state.score;
+        localStorage.setItem('dr_best', String(state.best));
+        bestEl.textContent = state.best;
+      }
+    }
+
+    function reset(){
+      state.running = true;
+      state.t = 0;
+      state.speed = 3;
+      state.boost = false;
+      state.score = 0;
+      scoreEl.textContent = '0';
+      state.obstacles = [];
+      car.lane = 1;
+      car.x = laneW*1 + laneW/2;
+    }
+  </script>
+</body>
+</html>
